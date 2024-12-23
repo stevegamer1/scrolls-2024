@@ -167,7 +167,6 @@ def assess_algorithms(output_filename: str|None, should_print: bool = True):
             print("Algorithm: " + algo_name)
             for func_name, result in results[algo_name].items():
                 print(func_name + " mean:", np.mean(result))
-                # print(np.mean(result))
             print()
     
     if output_filename is not None:

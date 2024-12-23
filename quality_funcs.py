@@ -17,13 +17,13 @@ def calc_IoU(arr1: np.ndarray, arr2: np.ndarray):
 
 
 def calc_relative_area_diff(arr1: np.ndarray, arr2: np.ndarray):
-    """Вычислить relative area difference двух булевых массивов. Функция асимметрична. arr2 обычно ground truth."""
+    """Вычислить relative area difference двух булевых массивов. Функция асимметрична. arr1 обычно ground truth."""
     assert(arr1.dtype == bool)
     assert(arr2.dtype == bool)
     assert(arr1.shape == arr2.shape)
     area1 = float(arr1.sum())
     area2 = float(arr2.sum())
-    return (area1 - area2) / area2
+    return (area1 - area2) / area1
 
 
 def get_surface_cKDtree(image: np.ndarray):
@@ -124,8 +124,8 @@ def quality_functions_tests():
 
 
     assert(calc_relative_area_diff(np.array([True], bool), np.array([True], bool)) == 0.0)
-    assert(calc_relative_area_diff(np.array([False], bool), np.array([True], bool)) == -1.0)
-    assert(calc_relative_area_diff(np.array([True, True], bool), np.array([True, False], bool)) == 1.0)
+    assert(calc_relative_area_diff(np.array([True], bool), np.array([False], bool)) == 1.0)
+    assert(calc_relative_area_diff(np.array([True, False], bool), np.array([True, True], bool)) == -1.0)
 
 
 quality_functions_tests()

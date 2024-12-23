@@ -261,13 +261,13 @@ def save_as_obj(points: list, triangles: list, filename: str):
             outfile.write("f {} {} {}\n".format(t[0] + 1, t[1] + 1, t[2] + 1))
 
 
-def fill_small_black_regions(bw_image: np.ndarray):
-    """Заполнить все регионы, состоящие из нулей, кроме самого большого, числом 255.
+def delete_all_but_biggest_region(bw_image: np.ndarray, connectivity=4):
+    """Заполнить все регионы, состоящие из числа 255, кроме самого большого, числом 0.
+    Предполагается, что такой регион один.
     
     |  bw_image - 2d массив, чёрно-белое (0 и 255) восьмибитное изображение.
     """
-    # Пометить чёрные регионы.
-    count, labeled, stats, centroids = cv.connectedComponentsWithStats(255 - bw_image, connectivity=4)
+    count, labeled, stats, centroids = cv.connectedComponentsWithStats(bw_image, connectivity=connectivity)
     max_area = 0
     for i in range(count)[1:]:
         max_area = max(max_area, stats[i][4])
@@ -277,37 +277,46 @@ def fill_small_black_regions(bw_image: np.ndarray):
         if area == max_area:
             max_label = i
     
-    result = np.logical_not(np.isin(labeled, [max_label])) * np.ones_like(labeled, np.uint8) * 255
+    result = np.array(np.isin(labeled, [max_label]), np.uint8) * 255
     return result
 
 
-def smooth_from_canny(image_after_canny: np.ndarray, dilate1_size: int = 5, noise_area_threshold: int = 200, dilate2_size: int = 4):
+def fill_small_regions(bw_image: np.ndarray, min_area: int, connectivity=4):
+    """Заполнить все регионы, состоящие из числа 255, меньше по площади чем min_area, числом 0.
+    
+    |  bw_image - 2d массив, чёрно-белое (0 и 255) восьмибитное изображение.
+    """
+    count, labeled, stats, centroids = cv.connectedComponentsWithStats(bw_image, connectivity=connectivity)
+    big_labels = set()
+    for i in range(count)[1:]:
+        area = stats[i][4]
+        if area >= min_area:
+            big_labels.add(i)
+    result = np.array(np.isin(labeled, list(big_labels)), np.uint8) * 255
+    return result
+
+
+def smooth_from_canny(image_after_canny: np.ndarray, dilate1_size: int = 5, noise_area_threshold: int = 200,
+                      inside_area_threshold: int = 20000, dilate2_size: int = 4):
     """Получить сглаженную бинаризацию, используя результат работы фильтра Кэнни.
     
     |  image_after_canny - 2d массив, результат применения фильтра Кэнни к исходному изображению.
     |  dilate1_size - какого размера брать первое раздутие, до первого утоньшения.
     |  noise_area_threshold - какая площадь считается максимальной площадью кусочков шума, которые будут удалены после первого утоньшения.
     |  dilate2_size - какого размера брать второе раздутие, после удаления шума.
+    |  inside_area_threshold - порог площади внутренности. Если площадь чёрного региона меньше этого порога, то он регион считается частью внутренности сечения свитка и закрашивается в белый цвет.
     """
     image_after_canny = cv.dilate(image_after_canny, cv.getStructuringElement(cv.MORPH_ELLIPSE, (dilate1_size, dilate1_size)))
     image_after_canny = ximgproc.thinning(image_after_canny)
 
-    # 1. Удалить маленькие компоненты.
-    count, labeled, stats, centroids = cv.connectedComponentsWithStats(image_after_canny)
-    big_labels = set()
-    for i in range(count)[1:]:
-        area = stats[i][4]
-        if area >= noise_area_threshold:
-            big_labels.add(i)
-    canny_clean = np.isin(labeled, list(big_labels)) * np.ones_like(labeled, np.uint8)
+    canny_clean = fill_small_regions(image_after_canny, noise_area_threshold, connectivity=8)
 
-    # 2. Раздуть и утоньшить.
-    dilated = cv.dilate(255 * canny_clean, cv.getStructuringElement(cv.MORPH_ELLIPSE, (dilate2_size, dilate2_size)))
+    dilated = cv.dilate(canny_clean, cv.getStructuringElement(cv.MORPH_ELLIPSE, (dilate2_size, dilate2_size)))
     thinned = ximgproc.thinning(dilated)
     
-    # 3. Заполнить внутренность.
-    filled = fill_small_black_regions(thinned)
-    return filled
+    filled = 255 - fill_small_regions(255 - thinned, inside_area_threshold, connectivity=4)
+    result = delete_all_but_biggest_region(filled, connectivity=4)
+    return result
 
 
 def canny_based_segmentation(data: np.ndarray, gauss_sigma: float = 5.0, canny_thresh1: float = 0.1,
@@ -323,7 +332,7 @@ def canny_based_segmentation(data: np.ndarray, gauss_sigma: float = 5.0, canny_t
     canny_input = data
     canny_input = cv.GaussianBlur(canny_input, (int(gauss_sigma * 3.0), int(gauss_sigma * 3.0)),
                                   sigmaX=gauss_sigma, sigmaY=gauss_sigma)
-    canny_input = np.array((canny_input - np.min(canny_input)) / np.max(canny_input) * 256.0, np.uint8)
+    canny_input = np.array((canny_input - np.min(canny_input)) / np.max(canny_input) * 255.0, np.uint8)
     canny = cv.Canny(canny_input, canny_thresh1, canny_thresh2)
     smooth_filled = smooth_from_canny(canny, **smooth_from_canny_args)
     return smooth_filled
